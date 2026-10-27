@@ -34,6 +34,7 @@ src/
   robot/                 3D ROBOT COMPANION (model from the portfolio)
     RobotBrain.ts        brain: lane around the machine, idle schedule, reactions, gaze (no three/pixi)
     clips.ts             animation clips: pose over time + events (jump, turn, antenna)
+    Trip.ts              one trip along the lane: rounded corners, arc-length sampling, ease-in-out
     ThoughtBubble.ts     the "dream" cloud with three symbols in a row
     springs.ts           springs for the "jelly" motion
     RobotRig.ts          body: loads robot.glb, marshmallow shader, poses, gaze, blinking
@@ -71,10 +72,17 @@ each reel's GSAP tween gets `progress(1)` — it jumps to its end, the final gri
 
 ## Robot companion
 
-The robot drifts between rest spots around the machine — but only along a **U-shaped lane outside the card**
-(beside SPIN → up the left side → across the top → down the right side → beside SPIN), passing through corner points,
-so it never cuts across the reels. On narrow screens the side lanes hug the card (the body may overlap the card's padding
-or be slightly cropped by the screen edge, never the reels); on wide screens they move out into the side margins and the robot gets bigger.
+The robot rests at spots around the machine and makes **trips** between them along a U-shaped lane outside the card
+(beside SPIN → up the left side → across the top → down the right side → beside SPIN). A trip is a path with rounded
+corners, travelled with ease-in-out (`Trip.ts`); the body rides the path exactly (no spring lag), so it never cuts across the reels.
+On narrow screens the side lanes hug the card (the body may overlap the card's padding or be cropped by a few px at the
+screen edge, never the reels); on wide screens they move out into the side margins and the robot gets bigger there.
+
+**Where it goes — never a fixed loop:**
+- **Towards the player:** when the cursor settles near another spot (0.7 s, with hysteresis) and the robot has rested ≥ 2.5 s, it walks over, a bit eager.
+- **Lazy wander** when the cursor is idle: after a random 6–14 s wait, mostly to a near spot, never straight back where it came from,
+  at a random tempo; on 30 % of trips that pass a corner it stops there for a look around before continuing.
+- While travelling it looks where it is going (or at the cursor); at rest it fidgets.
 
 ```
 idle ──spin──▶ spinStart ("let's go!") ──▶ idle, eyes follow each reel stopping left to right
@@ -82,7 +90,7 @@ idle | spin ──win──▶ smallWin (< 8× bet, clap) | win (hop) | bigWin (
 loss → nothing, stays idle
 ```
 
-**Idle layers:** always — breathing, bobbing, blinking, following the cursor · drifting to another spot every 4.5–8 s ·
+**Idle layers:** always — breathing, bobbing, blinking, following the cursor with its eyes · trips as above ·
 at rest — a random fidget (look around, stretch, hop; never the same twice in a row) · when the player is idle, **once per idle period**:
 10 s — flies to a top corner and dreams (a thought cloud in the band above the reels with three hearts/stars/… in a row;
 rarely the robot-head jackpot) → 20 s — waves → 25 s — flies beside SPIN and points at it.

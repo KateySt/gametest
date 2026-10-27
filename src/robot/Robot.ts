@@ -95,7 +95,7 @@ export async function attachRobot(options: {
         right: bottomRight.x,
         bottom: bottomRight.y,
       };
-      const intent = brain.update(now, visible, rig.position, motion);
+      const intent = brain.update(now, visible, motion);
 
       if (intent.dream) {
         const head = rig.position;

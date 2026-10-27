@@ -295,8 +295,19 @@ export class RobotRig {
       if (event.antenna) this.antennaZ.v += event.antenna;
     }
 
-    if (motion) {
-      // dragging: stiff spring towards the finger; otherwise soft jelly lag
+    if (motion && intent.travelling && !this.drag) {
+      // On a trip the path is already eased: ride it exactly. A spring would
+      // lag ~100 px at speed and cut corners across the reels. Velocity is
+      // still tracked so lean, stretch and the flying pose keep working.
+      const step = Math.max(dt, 1e-3);
+      this.px.v = (intent.target.x - this.px.x) / step;
+      this.py.v = (intent.target.y - this.py.x) / step;
+      this.px.x = intent.target.x;
+      this.py.x = intent.target.y;
+      this.size.x = intent.size;
+      this.size.v = 0;
+    } else if (motion) {
+      // dragging: stiff spring towards the finger; resting: soft jelly lag
       const k = this.drag ? 260 : 40;
       const c = this.drag ? 22 : 10;
       stepSpring(this.px, intent.target.x + (this.drag?.x ?? 0), k, c, dt);

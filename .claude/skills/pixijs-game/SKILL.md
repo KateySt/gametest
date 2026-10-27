@@ -144,7 +144,9 @@ Official guide: https://pixijs.com/8.x/guides/third-party/mixing-three-and-pixi
   the rig follows the frame with springs, so switching clips never pops.
 - Player gestures (tap, drag, long press) are physical impulses layered on top, not states.
 - Companion characters: never let them cover the play area. If they roam, move them along a lane of
-  waypoints around it (corners included, ±1 steps) instead of straight lines across it. Idle = in-place
+  waypoints around it (corners included, ±1 steps) instead of straight lines across it. Travel as eased
+  trips on a rounded path and set the body ON the path — a follower spring lags ~v·c/k px and cuts corners.
+  Pick destinations from the cursor (settle time + hysteresis) or a random wait, never a fixed loop. Idle = in-place
   loop + rare fidgets; attention seeking (bubble, wave, point) once per idle period, interrupted by any
   input. Never let the character spend the player's balance (autoplay).
 - Never wait for a character to arrive before reacting to input: animate the control in the same frame,
