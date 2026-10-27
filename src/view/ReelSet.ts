@@ -73,11 +73,17 @@ export class ReelSet extends Container {
     this.addChild(reelLayer, mask);
   }
 
-  spinTo(grid: SymbolGrid, nextFiller: () => SymbolId): Promise<void[]> {
+  spinTo(
+    grid: SymbolGrid,
+    nextFiller: () => SymbolId,
+    onReelStop?: (index: number) => void,
+  ): Promise<void[]> {
     return Promise.all(
       this.reels.map((reel, index) =>
         // Later reels travel further and longer, so they stop one by one.
-        reel.spinTo(grid[index], 16 + index * 7, nextFiller, 1.1 + index * 0.4),
+        reel
+          .spinTo(grid[index], 16 + index * 7, nextFiller, 1.1 + index * 0.4)
+          .then(() => onReelStop?.(index)),
       ),
     );
   }

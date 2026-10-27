@@ -1,10 +1,10 @@
 # Sweet Slots — PixiJS v8 + TypeScript + Vite
 
-A small 3×3 slot machine with 5 paylines, in the pastel style of the portfolio, with a 3D robot companion. The goal is to show a clean, best-practice structure for a PixiJS game.
+A small 3×3 slot machine with 5 paylines and a pull lever, in the pastel style of the portfolio, with a 3D robot companion. The goal is to show a clean, best-practice structure for a PixiJS game.
 
 ```bash
 npm install
-npm run dev      # http://localhost:8080 — SPIN button or Space; press again while spinning to quick-stop
+npm run dev      # http://localhost:8080 — SPIN button, Space or the lever (click or drag it down); press again while spinning to quick-stop
 npm run build    # lint + typecheck + production build into dist/
 ```
 
@@ -26,14 +26,16 @@ src/
     Reel.ts, ReelSet.ts  reels, mask, blur, quick stop, card frame
     WinPresenter.ts      win line, symbol pulse, ✦ sparkles (pooled)
     Hud.ts               balance/win pills, SPIN/STOP button
+    Lever.ts             pseudo-3D pull lever: pull(), tease(), drag-to-pull
     symbolTextures.ts    SVG from public/symbols + pastel tile → one texture
     Background.ts        cream page, pastel blobs, paper grain
     softTextures.ts      soft shadows and blobs baked with Canvas 2D
     layout.ts            design resolution and sizes
   game/Game.ts           CONTROLLER — connects model and view, emits events
   robot/                 3D ROBOT COMPANION (model from the portfolio)
-    RobotBrain.ts        brain: idle / spinStart / win, spots around the machine (no three/pixi)
-    clips.ts             animation clips: pose over time + events (jump, turn)
+    RobotBrain.ts        brain: home spot, idle schedule, reactions, gaze (no three/pixi)
+    clips.ts             animation clips: pose over time + events (jump, turn, antenna)
+    ThoughtBubble.ts     the "dream" cloud with three symbols in a row
     springs.ts           springs for the "jelly" motion
     RobotRig.ts          body: loads robot.glb, marshmallow shader, poses, gaze, blinking
     RobotLayer.ts        three.js renderer in the WebGL context shared with Pixi
@@ -59,25 +61,42 @@ With flags like `isSpinning`, `isShowingWin`, … you eventually get a double sp
 
 **6. The controller is the only place that knows everyone.** `Game.spin()` reads like a script: ask the model → animate → present the win. Views make no decisions; the model knows nothing about time.
 
-**7. Fixed design resolution (720×1000).** Everything is laid out in one coordinate space; the root container is scaled to fit the window.
+**7. Fixed design resolution (820×1000).** Everything is laid out in one coordinate space; the root container is scaled to fit the window.
 
-**8. Events instead of direct calls.** `Game.events` (`spinStart`, `reelsStopped`, `spinEnd`) — `Game` does not know the robot exists. The event bus appeared when the second listener did.
+**8. Events instead of direct calls.** `Game.events` (`spinStart`, `reelStopped`, `reelsStopped`, `spinEnd`) — `Game` does not know the robot exists. The event bus appeared when the second listener did.
 
 ## Quick stop
 
 Pressing SPIN again (the button reads STOP while spinning) or Space → `Game` sees the `spinning` state and calls `reelSet.stopNow()`:
 each reel's GSAP tween gets `progress(1)` — it jumps to its end, the final grid shows at once, and the normal flow continues.
 
+## The lever
+
+A classic one-armed-bandit lever on the machine's right side. It swings *towards the viewer* around a horizontal axis,
+faked in 2D: the stick is foreshortened (`scaleY = cos θ`, flipping below the pivot) and the knob grows as it comes closer —
+three Graphics, transforms only, no filters. SPIN, Space, a click on the knob or dragging it down all pull it.
+The lever moves in the same frame as the input (instant feedback); the reels start when it reaches the bottom (~0.16 s), like a real machine.
+The lever only reports "I was pulled" — the `Game` decides what happens.
+
 ## Robot companion
 
+The robot lives at **one home spot next to the lever** and moves only with a purpose: constant wandering in peripheral vision
+pulls attention away from the reels ([NN/g: Animation for usability](https://www.nngroup.com/articles/animation-usability/)).
+
 ```
-idle ──spin──▶ spinStart (0.9 s: crouch, push with both arms, hop) ──▶ idle
-idle | spinStart ──win──▶ win (1.6 s) / bigWin (2.8 s, ≥20× bet, with a full turn) ──▶ idle
+idle ──spin──▶ pullLever (its hand yanks the lever) ──▶ idle, eyes follow each reel stopping left to right
+            (spinStart "let's go!" instead, if the player is holding the robot)
+idle | spin ──win──▶ smallWin (< 8× bet, clap) | win (hop) | bigWin (≥ 20×, flip) ──▶ idle
 loss → nothing, stays idle
 ```
 
-**Idle** — breathing, bobbing, blinking, following the cursor, drifting between spots around the machine.
-Variations: after 6 s without input it waves, after 15 s it points at SPIN.
+**Idle layers:** always — breathing, bobbing, blinking, following the cursor · every 8–15 s — a random fidget
+(look around, stretch, hop; never the same twice in a row) · when the player is idle, **once per idle period**:
+10 s — dreams (a thought cloud with three hearts/stars/… in a row; rarely the robot-head jackpot) →
+20 s — waves → 25 s — holds the lever and teases it. **It never spins on its own** — only the player spends the balance
+(regulated markets banned autoplay: [SBC News](https://sbcnews.co.uk/featurednews/2021/02/02/ukgc-bans-online-slots-autoplay-and-quickspin-features/)).
+Any input interrupts attention seeking at once.
+
 Animations are **clips** (`clips.ts`): duration + pose at time t + events. The brain decides which clip plays; the body follows with springs.
 
 **Gestures** (as on the portfolio, but on Pixi events): hover — wink · click — jelly poke · double click — jump with a turn ·
@@ -102,6 +121,7 @@ Fonts are loaded before any text is created (`document.fonts.load`), otherwise c
 - Symbols (SVG + tile) are drawn once and baked into textures → the reels are plain `Sprite`s that batch.
 - Soft shadows, pastel blobs and grain are drawn once with Canvas 2D instead of Pixi filters every frame.
 - ✦ sparkles share one `GraphicsContext` and are pooled.
+- The dream bubble reuses the reels' baked symbol textures: measured 33 WebGL draw calls per frame with and without it (most of them are the 3D robot's meshes).
 - Each reel has only `rows + 1` sprites: they are re-textured while scrolling; nothing is created or destroyed.
 - The mask is a rectangle (the cheapest kind, GPU scissor).
 - The `BlurFilter` is attached only while spinning, then `filters = null`.

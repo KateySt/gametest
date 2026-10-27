@@ -87,7 +87,8 @@ totalEmissiveRadiance += uRimColor * rim * uRim;`,
 }
 
 const FLY_POSE: PoseFrame = { l: -1.25, r: 1.25, headZ: 0, headY: 0 };
-const IDLE_FAMILY = new Set(["idle", "wave", "point"]);
+/** Flying arms only replace calm clips, never a reaction. */
+const CALM_CLIPS = new Set(["idle", "lookAround", "dream"]);
 
 /** Maps design coordinates to the three.js camera (screen px, origin at centre, y up). */
 export interface ScreenMapping {
@@ -291,6 +292,7 @@ export class RobotRig {
       if (!motion) continue;
       if (event.jump) this.jump(event.jump, !!event.spin);
       if (event.jiggle) this.jiggle.v += event.jiggle;
+      if (event.antenna) this.antennaZ.v += event.antenna;
     }
 
     if (motion) {
@@ -322,10 +324,10 @@ export class RobotRig {
     }
 
     const frame: PoseFrame = !motion
-      ? CLIPS.idle.frame(0, 0, 1)
-      : flying && IDLE_FAMILY.has(intent.clip)
+      ? CLIPS.idle.frame(0, 0)
+      : flying && CALM_CLIPS.has(intent.clip)
         ? FLY_POSE
-        : clip.frame(progress, t, intent.side);
+        : clip.frame(progress, t);
 
     if (motion) {
       let jiggleTarget = Math.sin(t * 2.2) * 0.018; // breathing
@@ -364,7 +366,7 @@ export class RobotRig {
         : 0;
       stepSpring(
         this.lean,
-        clamp(-vx * 0.0006, -0.4, 0.4) + dragLean,
+        clamp(-vx * 0.0006, -0.4, 0.4) + dragLean + (pose.lean ?? 0),
         120,
         9,
         dt,
