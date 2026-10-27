@@ -58,6 +58,16 @@ export class ReelSet extends Container {
     return this.reels[reel].spriteAt(row);
   }
 
+  /** Outer edge of the frame in the parent's coordinates. */
+  get frameBounds() {
+    return {
+      left: this.x - FRAME_PADDING,
+      top: this.y - FRAME_PADDING,
+      right: this.x + this.windowWidth + FRAME_PADDING,
+      bottom: this.y + this.windowHeight + FRAME_PADDING,
+    };
+  }
+
   cellCenter(reel: number, row: number): { x: number; y: number } {
     return {
       x: reel * (CELL_SIZE + REEL_GAP) + CELL_SIZE / 2,

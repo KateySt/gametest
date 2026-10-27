@@ -1,0 +1,92 @@
+import { UPDATE_PRIORITY, type Application, type Container } from "pixi.js";
+import { BET } from "../config/slotConfig";
+import { type Game } from "../game/Game";
+import { RobotBrain, type RobotLayout } from "./RobotBrain";
+import { RobotHitArea } from "./RobotHitArea";
+import { type RobotLayer } from "./RobotLayer";
+import { RobotRig } from "./RobotRig";
+
+/**
+ * Wires the robot into the game: brain (behaviour) → rig (3D body) → layer
+ * (shared-context rendering), plus input and game events. The Game itself
+ * never knows the robot exists; it only emits events.
+ */
+export async function attachRobot(options: {
+  app: Application;
+  root: Container;
+  layer: RobotLayer;
+  layout: RobotLayout;
+  game: Game;
+}): Promise<void> {
+  const { app, root, layer, layout, game } = options;
+  const rig = await RobotRig.load("/robot.glb");
+  layer.scene.add(rig.object);
+
+  const brain = new RobotBrain(layout);
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+  const hitArea = new RobotHitArea({
+    onTap: () => {
+      brain.onPoke(performance.now());
+      rig.poke();
+    },
+    onDoubleTap: () => brain.onDoublePoke(performance.now()),
+    onHover: () => rig.hover(performance.now()),
+  });
+  root.addChild(hitArea);
+
+  // Input: any pointer activity anywhere counts as "the user is here".
+  app.stage.eventMode = "static";
+  app.stage.hitArea = app.screen;
+  app.stage.on("globalpointermove", (event) =>
+    brain.onUserActivity(performance.now(), root.toLocal(event.global)),
+  );
+  app.stage.on("pointerdown", () => brain.onUserActivity(performance.now()));
+  window.addEventListener("keydown", () =>
+    brain.onUserActivity(performance.now()),
+  );
+
+  game.events.on("spinStart", () => brain.onSpinStart(performance.now()));
+  game.events.on("reelsStopped", (result) =>
+    brain.onReelsStopped(performance.now(), result.totalWin, BET),
+  );
+
+  const syncSize = () =>
+    layer.resize(app.screen.width, app.screen.height, app.renderer.resolution);
+  app.renderer.on("resize", syncSize);
+  syncSize();
+
+  // Before Pixi renders (its render runs at LOW priority): think, move, and
+  // hand the GL state back to Pixi after three used it last frame.
+  app.ticker.add(
+    (ticker) => {
+      const now = ticker.lastTime;
+      const topLeft = root.toLocal({ x: 0, y: 0 });
+      const bottomRight = root.toLocal({
+        x: app.screen.width,
+        y: app.screen.height,
+      });
+      const motion = !reducedMotion.matches;
+      const visible = {
+        left: topLeft.x,
+        top: topLeft.y,
+        right: bottomRight.x,
+        bottom: bottomRight.y,
+      };
+      const intent = brain.update(now, visible, motion);
+      rig.update(intent, now, ticker.deltaMS / 1000, motion, {
+        toScreen: (point) => root.toGlobal(point),
+        scale: root.scale.x,
+        width: app.screen.width,
+        height: app.screen.height,
+      });
+      hitArea.follow(rig.position, rig.radius);
+      app.renderer.resetState();
+    },
+    undefined,
+    UPDATE_PRIORITY.NORMAL,
+  );
+
+  // After Pixi has drawn the game: draw the robot on top.
+  app.ticker.add(() => layer.render(), undefined, UPDATE_PRIORITY.UTILITY);
+}

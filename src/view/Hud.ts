@@ -64,6 +64,12 @@ export class Hud extends Container {
     this.winText.text = amount > 0 ? `WIN ${amount}` : "";
   }
 
+  /** SPIN button rectangle in HUD-local coordinates. */
+  get spinButtonBounds(): Rectangle {
+    const { x, y } = this.spinButton;
+    return new Rectangle(x, y, BUTTON_WIDTH, BUTTON_HEIGHT);
+  }
+
   setSpinEnabled(enabled: boolean): void {
     this.spinButton.alpha = enabled ? 1 : 0.4;
     this.spinButton.eventMode = enabled ? "static" : "none";

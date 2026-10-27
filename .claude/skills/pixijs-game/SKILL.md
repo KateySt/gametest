@@ -1,6 +1,6 @@
 ---
 name: pixijs-game
-description: Use when building, structuring or reviewing a 2D browser game with PixiJS v8 (pixi.js) and TypeScript — scaffolding a project, choosing a folder architecture, writing reels/slot machines, tweens, game loops, input, resizing, text, masks or filters, or when a Pixi button ignores clicks, a Vite build fails on top-level await, or v7-style code (new Application({...}), app.view, interactive = true) appears.
+description: Use when building, structuring or reviewing a 2D browser game with PixiJS v8 (pixi.js) and TypeScript — scaffolding a project, choosing a folder architecture, writing reels/slot machines, mixing three.js 3D models into Pixi, tweens, game loops, input, resizing, text, masks or filters, or when a Pixi button ignores clicks, a Vite build fails on top-level await, or v7-style code (new Application({...}), app.view, interactive = true) appears.
 ---
 
 # PixiJS v8 game development
@@ -106,6 +106,28 @@ Profile first; Pixi handles a lot out of the box. When it matters:
 - Physics-like simulation needing determinism → fixed timestep with an
   accumulator (Gaffer on Games, "Fix Your Timestep"). A slot machine does not need it.
 
+## Mixing three.js (3D) into a Pixi game
+
+Official guide: https://pixijs.com/8.x/guides/third-party/mixing-three-and-pixi
+
+- three creates canvas + context (`new THREE.WebGLRenderer({ antialias: true, stencil: true })`,
+  `autoClear = false`); Pixi inits on it: `app.init({ preference: "webgl", canvas, context })`.
+  WebGPU cannot share the context.
+- One loop: Pixi renders at `UPDATE_PRIORITY.LOW`; add the three render at
+  `UPDATE_PRIORITY.UTILITY` (after) and call `app.renderer.resetState()` in a NORMAL-priority
+  callback (before). three side: `resetState(); clearDepth(); render()`. Missing resets break masks/filters.
+- Keep three's size in sync: on `app.renderer.on("resize")` → `setPixelRatio(resolution); setSize(w, h, false)`.
+- Orthographic camera in CSS px (origin centre, y up) so `root.toGlobal(designPoint)` maps directly.
+- Clicks on a 3D object: an invisible Pixi `Container` with a `Circle` hitArea that follows it — no DOM overlay.
+- Keep behaviour (brain/FSM) free of three and Pixi; only the rig touches three.
+
+## Debugging
+
+- `if (import.meta.env.DEV) globalThis.__PIXI_APP__ = app;` — enables the PixiJS DevTools extension
+  and lets you inspect the scene from the console.
+- A hidden/background tab can stop `requestAnimationFrame` entirely: "animation stuck" may be the
+  environment, check frame rate before debugging code.
+
 ## Slot-machine recipe
 
 1. `SlotMachine.spin()` (core): deduct bet → weighted-random grid `[reel][row]` → evaluate paylines → credit win → return `SpinResult`.
@@ -130,3 +152,4 @@ Profile first; Pixi handles a lot out of the box. When it matters:
 - State pattern: https://gameprogrammingpatterns.com/state.html · Game loop: https://gameprogrammingpatterns.com/game-loop.html
 - Fixed timestep: https://gafferongames.com/post/fix_your_timestep/
 - GSAP docs: https://gsap.com/docs/v3/
+- three.js docs: https://threejs.org/docs/
