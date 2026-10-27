@@ -25,13 +25,26 @@ export async function attachRobot(options: {
   const brain = new RobotBrain(layout);
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
+  // Gestures are physical reactions layered on top of any clip: they move the
+  // body (rig) and only tell the brain "the user is here" / "hold still".
+  const now = () => performance.now();
   const hitArea = new RobotHitArea({
     onTap: () => {
-      brain.onPoke(performance.now());
-      rig.poke();
+      brain.onUserActivity(now());
+      rig.poke(now());
     },
-    onDoubleTap: () => brain.onDoublePoke(performance.now()),
-    onHover: () => rig.hover(performance.now()),
+    onDoubleTap: () => {
+      brain.onUserActivity(now());
+      rig.doublePoke(now());
+    },
+    onHover: () => rig.hover(now()),
+    onPress: (pressing) => {
+      brain.setHeld(pressing, now());
+      rig.setPressing(pressing);
+    },
+    onHug: () => rig.hug(),
+    onDrag: (offset) => rig.setDrag(offset),
+    onRelease: (strength, hop) => rig.release(now(), strength, hop),
   });
   root.addChild(hitArea);
 

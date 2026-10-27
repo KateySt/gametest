@@ -18,6 +18,7 @@ export class Reel extends Container {
   private strip: SymbolId[];
   private offset = 1;
   private previousOffset = 1;
+  private tween: gsap.core.Tween | null = null;
 
   constructor(
     private readonly textures: SymbolTextures,
@@ -63,15 +64,22 @@ export class Reel extends Container {
     this.render();
 
     this.filters = [this.blur];
-    await gsap.to(this, {
+    this.tween = gsap.to(this, {
       offset: 1,
       duration,
       ease: "back.out(0.7)",
       onUpdate: () => this.render(),
     });
+    await this.tween;
+    this.tween = null;
     // Filters cost a render pass each; drop it when the reel is still.
     this.filters = null;
     this.blur.strengthY = 0;
+  }
+
+  /** Quick stop: jump the running tween to its end — the final symbols show at once. */
+  stopNow(): void {
+    this.tween?.progress(1);
   }
 
   private render(): void {

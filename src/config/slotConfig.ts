@@ -1,13 +1,14 @@
 // All tunable game data lives here: designers change numbers, not code.
 // No pixi.js imports — this file is shared by the model, the view and tests.
 
+// Ordered from most common to the jackpot.
 export const SYMBOL_IDS = [
-  "cherry",
-  "lemon",
-  "bell",
+  "heart",
   "star",
-  "seven",
-  "diamond",
+  "macaron",
+  "cloud",
+  "crystal",
+  "robot",
 ] as const;
 
 export type SymbolId = (typeof SYMBOL_IDS)[number];
@@ -17,18 +18,15 @@ export interface SymbolDefinition {
   weight: number;
   /** Win multiplier of the bet for three in a row on a payline. */
   payout: number;
-  /** Placeholder art until a real spritesheet is added. */
-  emoji: string;
-  color: number;
 }
 
 export const SYMBOLS: Record<SymbolId, SymbolDefinition> = {
-  cherry: { weight: 30, payout: 5, emoji: "🍒", color: 0x7a1f2b },
-  lemon: { weight: 25, payout: 8, emoji: "🍋", color: 0x7a6a1f },
-  bell: { weight: 18, payout: 12, emoji: "🔔", color: 0x6b4a12 },
-  star: { weight: 12, payout: 20, emoji: "⭐", color: 0x23407a },
-  seven: { weight: 8, payout: 40, emoji: "7️⃣", color: 0x4a1f7a },
-  diamond: { weight: 5, payout: 100, emoji: "💎", color: 0x1f6b6b },
+  heart: { weight: 30, payout: 5 },
+  star: { weight: 25, payout: 8 },
+  macaron: { weight: 18, payout: 12 },
+  cloud: { weight: 12, payout: 20 },
+  crystal: { weight: 8, payout: 40 },
+  robot: { weight: 5, payout: 100 }, // jackpot
 };
 
 export const REEL_COUNT = 3;

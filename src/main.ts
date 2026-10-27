@@ -1,3 +1,6 @@
+import "@fontsource/bricolage-grotesque/800.css";
+import "@fontsource/inter/500.css";
+import "@fontsource/inter/600.css";
 import gsap from "gsap";
 import { Application, Container } from "pixi.js";
 import {
@@ -6,15 +9,25 @@ import {
   ROW_COUNT,
   STARTING_BALANCE,
 } from "./config/slotConfig";
+import { theme } from "./config/theme";
 import { SlotMachine } from "./core/SlotMachine";
 import { Game } from "./game/Game";
 import { attachRobot } from "./robot/Robot";
 import { RobotLayer } from "./robot/RobotLayer";
+import { Background } from "./view/Background";
 import { Hud } from "./view/Hud";
 import { DESIGN_HEIGHT, DESIGN_WIDTH } from "./view/layout";
 import { ReelSet } from "./view/ReelSet";
-import { createSymbolTextures } from "./view/symbolTextures";
+import { loadSymbolTextures } from "./view/symbolTextures";
 import { WinPresenter } from "./view/WinPresenter";
+
+// Canvas text is rasterized with whatever font is ready at that moment, so
+// the web fonts must finish loading before any Text/BitmapText is created.
+await Promise.all([
+  document.fonts.load(`800 46px "${theme.fontDisplay}"`),
+  document.fonts.load(`500 18px "${theme.fontBody}"`),
+  document.fonts.load(`600 30px "${theme.fontBody}"`),
+]);
 
 // three.js owns the canvas and WebGL context; Pixi renders into the same
 // context (WebGL only — WebGPU cannot share it). See robot/RobotLayer.ts.
@@ -26,7 +39,7 @@ await app.init({
   preference: "webgl",
   canvas: robotLayer.canvas,
   context: robotLayer.context,
-  background: "#1b1430",
+  background: theme.page,
   resizeTo: window,
   resolution: Math.min(window.devicePixelRatio, 2),
   autoDensity: true,
@@ -45,13 +58,14 @@ gsap.ticker.remove(gsap.updateRoot);
 app.ticker.add((ticker) => gsap.updateRoot(ticker.lastTime / 1000));
 
 const machine = new SlotMachine(STARTING_BALANCE, BET);
-const textures = createSymbolTextures(app.renderer);
+const textures = await loadSymbolTextures(app.renderer);
 const initialGrid = Array.from({ length: REEL_COUNT }, () =>
   Array.from({ length: ROW_COUNT }, () => machine.randomSymbol()),
 );
 
+const background = new Background();
 const root = new Container();
-app.stage.addChild(root);
+app.stage.addChild(background, root);
 
 const reelSet = new ReelSet(textures, initialGrid);
 reelSet.position.set((DESIGN_WIDTH - reelSet.windowWidth) / 2, 160);
@@ -71,6 +85,7 @@ window.addEventListener("keydown", (event) => {
 // Letterbox: scale the fixed design resolution to fit any window.
 function fitToScreen(): void {
   const { width, height } = app.screen;
+  background.resize(width, height);
   const scale = Math.min(width / DESIGN_WIDTH, height / DESIGN_HEIGHT);
   root.scale.set(scale);
   root.position.set(

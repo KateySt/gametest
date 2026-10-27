@@ -1,11 +1,14 @@
-import { Container, Graphics, type Sprite } from "pixi.js";
+import { Container, Graphics, Sprite } from "pixi.js";
 import { REEL_COUNT, ROW_COUNT, type SymbolId } from "../config/slotConfig";
+import { theme } from "../config/theme";
 import { type SymbolGrid } from "../core/paylines";
 import { CELL_SIZE, REEL_GAP } from "./layout";
 import { Reel } from "./Reel";
+import { softShadowTexture } from "./softTextures";
 import { type SymbolTextures } from "./symbolTextures";
 
-const FRAME_PADDING = 18;
+const FRAME_PADDING = 22;
+const SHADOW_BLUR = 40;
 
 /** The reel window: frame, mask and all reels. Stops them left to right. */
 export class ReelSet extends Container {
@@ -16,17 +19,42 @@ export class ReelSet extends Container {
   constructor(textures: SymbolTextures, initialGrid: SymbolGrid) {
     super();
 
+    // Portfolio "card-soft": frosted white card, white edge, soft lifted shadow.
+    const cardWidth = this.windowWidth + FRAME_PADDING * 2;
+    const cardHeight = this.windowHeight + FRAME_PADDING * 2;
+    const shadow = new Sprite(
+      softShadowTexture(
+        cardWidth,
+        cardHeight,
+        theme.radiusBlob,
+        SHADOW_BLUR,
+        18,
+        0.22,
+      ),
+    );
+    shadow.position.set(
+      -FRAME_PADDING - SHADOW_BLUR * 2,
+      -FRAME_PADDING - SHADOW_BLUR * 2,
+    );
     this.addChild(
+      shadow,
       new Graphics()
         .roundRect(
           -FRAME_PADDING,
           -FRAME_PADDING,
-          this.windowWidth + FRAME_PADDING * 2,
-          this.windowHeight + FRAME_PADDING * 2,
-          28,
+          cardWidth,
+          cardHeight,
+          theme.radiusBlob,
         )
-        .fill(0x14101f)
-        .stroke({ width: 6, color: 0xf2c14e }),
+        .fill({ color: theme.surface, alpha: theme.cardAlpha })
+        .stroke({
+          width: 3,
+          color: theme.surface,
+          alpha: theme.cardBorderAlpha,
+        })
+        // reel window: a cream well inside the card
+        .roundRect(-6, -6, this.windowWidth + 12, this.windowHeight + 12, 22)
+        .fill({ color: theme.page, alpha: 0.9 }),
     );
 
     const reelLayer = new Container();
@@ -52,6 +80,10 @@ export class ReelSet extends Container {
         reel.spinTo(grid[index], 16 + index * 7, nextFiller, 1.1 + index * 0.4),
       ),
     );
+  }
+
+  stopNow(): void {
+    this.reels.forEach((reel) => reel.stopNow());
   }
 
   symbolAt(reel: number, row: number): Sprite {

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { type Point, type RobotIntent, type RobotPose } from "./RobotBrain";
+import { type Point, type RobotIntent } from "./RobotBrain";
+import { CLIPS, type ClipEvent, type PoseFrame } from "./clips";
 import { clamp, spring, stepSpring } from "./springs";
 
 // Ported from the portfolio's Robot.tsx without React/R3F and the night theme.
@@ -16,6 +17,21 @@ const SOFT_PARTS = new Set([
   "EarL",
   "EarR",
 ]);
+
+/** Soft round blob fading to transparent — the floor shadow (as in the portfolio). */
+function radialTexture(rgb: string, alpha: number): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 64;
+  const context = canvas.getContext("2d")!;
+  const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gradient.addColorStop(0, `rgba(${rgb},${alpha})`);
+  gradient.addColorStop(1, `rgba(${rgb},0)`);
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 64, 64);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
 
 const shared = { uTime: { value: 0 }, uWobble: { value: 0 } };
 
@@ -70,56 +86,8 @@ totalEmissiveRadiance += uRimColor * rim * uRim;`,
   return material;
 }
 
-/** Arm angles (right arm raises with +, left with −) and head tilt per pose. */
-function poseTargets(pose: RobotPose | "fly", t: number, side: number) {
-  switch (pose) {
-    case "wave":
-      return {
-        l: -0.15,
-        r: 2.15 + Math.sin(t * 9) * 0.4,
-        headZ: -0.08,
-        headY: 0,
-      };
-    case "point":
-      // point at the target, away from the robot's side
-      return side > 0
-        ? {
-            l: -1.55 + Math.sin(t * 4) * 0.08,
-            r: 0.1,
-            headZ: 0.06,
-            headY: -0.35,
-          }
-        : {
-            l: -0.1,
-            r: 1.55 + Math.sin(t * 4) * 0.08,
-            headZ: -0.06,
-            headY: 0.35,
-          };
-    case "think":
-      return {
-        l: -2.35,
-        r: 0.2,
-        headZ: 0.16 + Math.sin(t * 1.5) * 0.03,
-        headY: 0.1,
-      };
-    case "cheer":
-      return {
-        l: -2.2 - Math.sin(t * 10) * 0.35,
-        r: 2.2 + Math.sin(t * 10 + 1) * 0.35,
-        headZ: Math.sin(t * 5) * 0.1,
-        headY: 0,
-      };
-    case "fly":
-      return { l: -1.25, r: 1.25, headZ: 0, headY: 0 };
-    default:
-      return {
-        l: -0.08 - Math.sin(t * 1.6) * 0.06,
-        r: 0.08 + Math.sin(t * 1.6 + 1) * 0.06,
-        headZ: 0,
-        headY: 0,
-      };
-  }
-}
+const FLY_POSE: PoseFrame = { l: -1.25, r: 1.25, headZ: 0, headY: 0 };
+const IDLE_FAMILY = new Set(["idle", "wave", "point"]);
 
 /** Maps design coordinates to the three.js camera (screen px, origin at centre, y up). */
 export interface ScreenMapping {
@@ -131,8 +99,18 @@ export interface ScreenMapping {
 }
 
 export class RobotRig {
+  /** Positioned + scaled. Holds the turning body and the (non-turning) floor shadow. */
   readonly object = new THREE.Group();
+  private readonly body = new THREE.Group();
   private readonly squash = new THREE.Group();
+  private readonly shadow = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshBasicMaterial({
+      map: radialTexture("43,36,64", 0.32),
+      transparent: true,
+      depthWrite: false,
+    }),
+  );
   private readonly parts;
   private readonly base;
 
@@ -157,7 +135,12 @@ export class RobotRig {
   private airborne = false;
   private wobble = 0;
   private previousVx = 0;
-  private lastJump = 0;
+  private clipKey = "";
+  private firedEvents = new Set<ClipEvent>();
+  private happyUntil = 0;
+  // gestures (design px)
+  private pressing = false;
+  private drag: Point | null = null;
   private blinkAt = 2000;
   private blinkEnd = 0;
   private winkUntil = 0;
@@ -202,7 +185,9 @@ export class RobotRig {
     // squash & stretch pivots at the feet
     this.squash.position.y = -ROBOT_HEIGHT / 2;
     this.squash.add(model);
-    this.object.add(this.squash);
+    this.body.add(this.squash);
+    this.shadow.renderOrder = -1;
+    this.object.add(this.shadow, this.body);
   }
 
   /** Current centre in design coordinates (for the hit area). */
@@ -218,16 +203,58 @@ export class RobotRig {
     return this.size.x * 0.36;
   }
 
-  poke(): void {
+  // --- gestures (ported from the portfolio's RobotHitZone) ---
+
+  /** Tap: jelly poke + happy eyes. */
+  poke(now: number): void {
     this.jiggle.v -= 5.5;
     this.headZ.v += (Math.random() > 0.5 ? 1 : -1) * 7;
     this.antennaZ.v += (Math.random() > 0.5 ? 1 : -1) * 14;
+    this.happyUntil = now + 750;
   }
 
+  /** Double tap: jump with a full turn. */
+  doublePoke(now: number): void {
+    this.jump(2.6, true);
+    this.happyUntil = now + 1200;
+  }
+
+  /** Mouse enters: small squish + wink. */
   hover(now: number): void {
     this.jiggle.v -= 2.2;
     this.antennaZ.v += 6;
     this.winkUntil = now + 260;
+  }
+
+  /** Finger/mouse held down on the robot: squashes while pressed. */
+  setPressing(pressing: boolean): void {
+    this.pressing = pressing;
+  }
+
+  /** Long press reached: the "hug" squish. */
+  hug(): void {
+    this.antennaX.v += 8;
+  }
+
+  /** Drag offset from the robot's spot (already rubber-banded), or null. */
+  setDrag(offset: Point | null): void {
+    this.drag = offset;
+  }
+
+  /** Let go after a drag or a hug: bounce back. */
+  release(now: number, strength: number, hop: boolean): void {
+    this.jiggle.v += 7 * strength;
+    this.antennaZ.v += 12 * (Math.random() - 0.5) * 2;
+    this.happyUntil = now + 600;
+    if (hop) this.jump(2.4, false);
+  }
+
+  private jump(velocity: number, spin: boolean): void {
+    if (this.airborne) return;
+    this.hopVelocity = velocity; // robot heights per second
+    this.airborne = true;
+    this.jiggle.v += 5;
+    if (spin) this.spinTarget += Math.PI * 2;
   }
 
   update(
@@ -248,19 +275,30 @@ export class RobotRig {
       this.placed = true;
     }
 
-    if (intent.jumpCount !== this.lastJump) {
-      this.lastJump = intent.jumpCount;
-      if (motion && !this.airborne) {
-        this.hopVelocity = 2.4; // robot heights per second
-        this.airborne = true;
-        this.jiggle.v += 5;
-        this.spinTarget += Math.PI * 2;
-      }
+    // Clip events (jumps, turns) fire once when their moment passes.
+    const clip = CLIPS[intent.clip];
+    const key = `${intent.clip}@${intent.clipStartedAt}`;
+    if (key !== this.clipKey) {
+      this.clipKey = key;
+      this.firedEvents.clear();
+    }
+    const progress = Number.isFinite(clip.duration)
+      ? clamp((now - intent.clipStartedAt) / clip.duration, 0, 1)
+      : 0;
+    for (const event of clip.events ?? []) {
+      if (event.at > progress || this.firedEvents.has(event)) continue;
+      this.firedEvents.add(event);
+      if (!motion) continue;
+      if (event.jump) this.jump(event.jump, !!event.spin);
+      if (event.jiggle) this.jiggle.v += event.jiggle;
     }
 
     if (motion) {
-      stepSpring(this.px, intent.target.x, 40, 10, dt);
-      stepSpring(this.py, intent.target.y, 40, 10, dt);
+      // dragging: stiff spring towards the finger; otherwise soft jelly lag
+      const k = this.drag ? 260 : 40;
+      const c = this.drag ? 22 : 10;
+      stepSpring(this.px, intent.target.x + (this.drag?.x ?? 0), k, c, dt);
+      stepSpring(this.py, intent.target.y + (this.drag?.y ?? 0), k, c, dt);
       stepSpring(this.size, intent.size, 40, 12, dt);
     }
 
@@ -270,7 +308,7 @@ export class RobotRig {
     const speed = Math.hypot(vx, vy);
     const accelX = (vx - this.previousVx) / Math.max(dt, 1e-3);
     this.previousVx = vx;
-    const flying = motion && speed > 380;
+    const flying = motion && speed > 380 && !this.drag;
 
     if (this.airborne) {
       this.hopVelocity -= 9.5 * dt;
@@ -283,8 +321,18 @@ export class RobotRig {
       }
     }
 
+    const frame: PoseFrame = !motion
+      ? CLIPS.idle.frame(0, 0, 1)
+      : flying && IDLE_FAMILY.has(intent.clip)
+        ? FLY_POSE
+        : clip.frame(progress, t, intent.side);
+
     if (motion) {
       let jiggleTarget = Math.sin(t * 2.2) * 0.018; // breathing
+      jiggleTarget += frame.squash ?? 0;
+      if (this.pressing && !this.drag) jiggleTarget = -0.3; // long-press squish
+      const dragDistance = this.drag ? Math.hypot(this.drag.x, this.drag.y) : 0;
+      jiggleTarget += clamp((dragDistance * view.scale) / 450, 0, 0.28); // taffy pull
       jiggleTarget += clamp(speed / 5000, 0, 0.14); // stretch while flying
       if (this.airborne)
         jiggleTarget += clamp(this.hopVelocity * 0.05, -0.1, 0.12);
@@ -309,11 +357,18 @@ export class RobotRig {
       lookY = clamp(-(intent.lookAt.y - this.py.x) / 260, -1, 1);
     }
 
-    const pose = motion
-      ? poseTargets(flying ? "fly" : intent.pose, t, intent.side)
-      : poseTargets("idle", 0, 1);
+    const pose = frame;
     if (motion) {
-      stepSpring(this.lean, clamp(-vx * 0.0006, -0.4, 0.4), 120, 9, dt);
+      const dragLean = this.drag
+        ? clamp(-this.drag.x * view.scale * 0.0025, -0.5, 0.5)
+        : 0;
+      stepSpring(
+        this.lean,
+        clamp(-vx * 0.0006, -0.4, 0.4) + dragLean,
+        120,
+        9,
+        dt,
+      );
       stepSpring(this.turn, lookX * 0.32, 60, 10, dt);
       stepSpring(this.spin, this.spinTarget, 26, 7, dt);
       stepSpring(this.headY, lookX * 0.5 + pose.headY, 110, 10, dt);
@@ -350,7 +405,21 @@ export class RobotRig {
       0,
     );
     this.object.scale.setScalar(scale);
-    this.object.rotation.set(0, this.turn.x + this.spin.x, this.lean.x);
+    this.body.rotation.set(0, this.turn.x + this.spin.x, this.lean.x);
+
+    // floor shadow stays on the ground while the body hops and bobs
+    const shrink = 1 / (1 + this.hop * 2.2);
+    this.shadow.position.set(
+      0,
+      -ROBOT_HEIGHT / 2 - 0.05 - this.hop * ROBOT_HEIGHT - bob / scale,
+      -1,
+    );
+    this.shadow.scale.set(
+      1.5 * shrink * (1 - this.jiggle.x * 0.6),
+      0.32 * shrink,
+      1,
+    );
+    (this.shadow.material as THREE.MeshBasicMaterial).opacity = 0.9 * shrink;
 
     const stretch = 1 + this.jiggle.x;
     const thin = 1 / Math.sqrt(Math.max(stretch, 0.3));
@@ -390,7 +459,8 @@ export class RobotRig {
     }
     const blinking = motion && now < this.blinkEnd;
     const winking = motion && now < this.winkUntil;
-    const open = (closed: boolean) => (closed ? 0.12 : intent.happy ? 0.4 : 1);
+    const happy = motion && (!!frame.happy || now < this.happyUntil);
+    const open = (closed: boolean) => (closed ? 0.12 : happy ? 0.4 : 1);
     eyeL.scale.set(
       this.base.eyeScale.x,
       this.base.eyeScale.y * open(blinking || winking),
@@ -401,8 +471,6 @@ export class RobotRig {
       this.base.eyeScale.y * open(blinking),
       this.base.eyeScale.z,
     );
-    mouth.scale
-      .copy(this.base.mouthScale)
-      .multiplyScalar(intent.happy ? 1.35 : 1);
+    mouth.scale.copy(this.base.mouthScale).multiplyScalar(happy ? 1.35 : 1);
   }
 }

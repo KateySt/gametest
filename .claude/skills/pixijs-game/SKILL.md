@@ -90,6 +90,15 @@ Profile first; Pixi handles a lot out of the box. When it matters:
 - **Destroy:** `removeChild` then `destroy({ children: true })`; destroying many
   textures — spread over frames. Recreating the app: `app.destroy({ releaseGlobalResources: true })`.
 
+## Soft UI (shadows, blobs, fonts)
+
+- Bake blurry things once with Canvas 2D (`shadowBlur`, radial gradients) → `Texture.from(canvas)`;
+  never keep a `BlurFilter`/drop-shadow filter on static UI.
+- Many identical vector shapes: one `GraphicsContext`, `new Graphics(context)` per instance (shared geometry).
+- Web fonts: `await document.fonts.load('800 46px "Font"')` before creating any `Text`/`BitmapText`,
+  otherwise they rasterize with a fallback font. Bundle fonts (`@fontsource/*`) instead of a CDN.
+- SVG art: `Assets.load({ src: "x.svg", data: { resolution: 2 } })` for crisp rasterization, then bake.
+
 ## Animation and time
 
 - Use **GSAP** for tweens (eases like `back.out` give the reel "bounce"), and
@@ -128,12 +137,23 @@ Official guide: https://pixijs.com/8.x/guides/third-party/mixing-three-and-pixi
 - A hidden/background tab can stop `requestAnimationFrame` entirely: "animation stuck" may be the
   environment, check frame rate before debugging code.
 
+## Character behaviour (clips)
+
+- Model animations as **clips**: `{ duration, frame(progress, t), events: [{ at, jump }] }` — pure data.
+  A brain FSM picks the clip (`idle` loops; one-shots return to idle when `duration` passes);
+  the rig follows the frame with springs, so switching clips never pops.
+- Player gestures (tap, drag, long press) are physical impulses layered on top, not states.
+- Pixi drag: `pointerdown` on the target, `globalpointermove` on the same object, end on
+  `pointerup` + `pointerupoutside`.
+
 ## Slot-machine recipe
 
 1. `SlotMachine.spin()` (core): deduct bet → weighted-random grid `[reel][row]` → evaluate paylines → credit win → return `SpinResult`.
 2. Controller: `idle → spinning` → `await reelSet.spinTo(result.grid)` → `presenting` → `await winPresenter.show(wins)` → `idle`.
 3. Reel view: a strip `[pad, ...target, ...fillers, ...current, pad]`; tween a float `offset` from the "current" window to the target; sprite `k` sits at `y = (k - offset) * cell`. Later reels get more fillers and longer durations so they stop left to right. Blur strength ∝ scroll speed.
 4. HUD only emits intent (`onSpin`) and displays numbers it is given.
+5. Quick stop: second SPIN press while spinning → keep each reel's tween and call `tween.progress(1)`;
+   the awaited promise resolves and the normal flow continues.
 
 ## Common mistakes
 
