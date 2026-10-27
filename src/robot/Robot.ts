@@ -6,8 +6,6 @@ import {
 } from "pixi.js";
 import { BET, type SymbolId } from "../config/slotConfig";
 import { type Game } from "../game/Game";
-import { type Lever } from "../view/Lever";
-import { type ClipName } from "./clips";
 import { RobotBrain, type RobotLayout } from "./RobotBrain";
 import { RobotHitArea } from "./RobotHitArea";
 import { type RobotLayer } from "./RobotLayer";
@@ -25,10 +23,9 @@ export async function attachRobot(options: {
   layer: RobotLayer;
   layout: RobotLayout;
   game: Game;
-  lever: Lever;
   symbolTextures: Record<SymbolId, Texture>;
 }): Promise<void> {
-  const { app, root, layer, layout, game, lever, symbolTextures } = options;
+  const { app, root, layer, layout, game, symbolTextures } = options;
   const rig = await RobotRig.load("/robot.glb");
   layer.scene.add(rig.object);
 
@@ -56,11 +53,7 @@ export async function attachRobot(options: {
     onDrag: (offset) => rig.setDrag(offset),
     onRelease: (strength, hop) => rig.release(now(), strength, hop),
   });
-  // The bubble trails down to the robot's head (top of its home spot).
-  const bubble = new ThoughtBubble(symbolTextures, layout.bubble, {
-    x: layout.home.x - layout.size * 0.15,
-    y: layout.home.y - layout.size * 0.42,
-  });
+  const bubble = new ThoughtBubble(symbolTextures);
   root.addChild(hitArea, bubble);
 
   // Input: any pointer activity anywhere counts as "the user is here".
@@ -85,24 +78,34 @@ export async function attachRobot(options: {
   app.renderer.on("resize", syncSize);
   syncSize();
 
-  let lastClip: ClipName = "idle";
-
   // Before Pixi renders (its render runs at LOW priority): think, move, and
   // hand the GL state back to Pixi after three used it last frame.
   app.ticker.add(
     (ticker) => {
       const now = ticker.lastTime;
       const motion = !reducedMotion.matches;
-      const intent = brain.update(now, motion);
+      const topLeft = root.toLocal({ x: 0, y: 0 });
+      const bottomRight = root.toLocal({
+        x: app.screen.width,
+        y: app.screen.height,
+      });
+      const visible = {
+        left: topLeft.x,
+        top: topLeft.y,
+        right: bottomRight.x,
+        bottom: bottomRight.y,
+      };
+      const intent = brain.update(now, visible, rig.position, motion);
 
-      // Side effects of clip changes on the 2D scene.
-      if (intent.clip !== lastClip) {
-        if (intent.clip === "tease") lever.tease();
-        lastClip = intent.clip;
+      if (intent.dream) {
+        const head = rig.position;
+        bubble.show(intent.dream.symbol, intent.dream.bubble, {
+          x: head.x,
+          y: head.y - rig.radius,
+        });
+      } else {
+        bubble.hide();
       }
-      if (intent.dream) bubble.show(intent.dream);
-      else bubble.hide();
-
       rig.update(intent, now, ticker.deltaMS / 1000, motion, {
         toScreen: (point) => root.toGlobal(point),
         scale: root.scale.x,

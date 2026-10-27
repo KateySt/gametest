@@ -1,10 +1,10 @@
 # Sweet Slots — PixiJS v8 + TypeScript + Vite
 
-A small 3×3 slot machine with 5 paylines and a pull lever, in the pastel style of the portfolio, with a 3D robot companion. The goal is to show a clean, best-practice structure for a PixiJS game.
+A small 3×3 slot machine with 5 paylines, in the pastel style of the portfolio, with a 3D robot companion. The goal is to show a clean, best-practice structure for a PixiJS game.
 
 ```bash
 npm install
-npm run dev      # http://localhost:8080 — SPIN button, Space or the lever (click or drag it down); press again while spinning to quick-stop
+npm run dev      # http://localhost:8080 — SPIN button or Space; press again while spinning to quick-stop
 npm run build    # lint + typecheck + production build into dist/
 ```
 
@@ -26,14 +26,13 @@ src/
     Reel.ts, ReelSet.ts  reels, mask, blur, quick stop, card frame
     WinPresenter.ts      win line, symbol pulse, ✦ sparkles (pooled)
     Hud.ts               balance/win pills, SPIN/STOP button
-    Lever.ts             pseudo-3D pull lever: pull(), tease(), drag-to-pull
     symbolTextures.ts    SVG from public/symbols + pastel tile → one texture
     Background.ts        cream page, pastel blobs, paper grain
     softTextures.ts      soft shadows and blobs baked with Canvas 2D
     layout.ts            design resolution and sizes
   game/Game.ts           CONTROLLER — connects model and view, emits events
   robot/                 3D ROBOT COMPANION (model from the portfolio)
-    RobotBrain.ts        brain: home spot, idle schedule, reactions, gaze (no three/pixi)
+    RobotBrain.ts        brain: lane around the machine, idle schedule, reactions, gaze (no three/pixi)
     clips.ts             animation clips: pose over time + events (jump, turn, antenna)
     ThoughtBubble.ts     the "dream" cloud with three symbols in a row
     springs.ts           springs for the "jelly" motion
@@ -61,7 +60,7 @@ With flags like `isSpinning`, `isShowingWin`, … you eventually get a double sp
 
 **6. The controller is the only place that knows everyone.** `Game.spin()` reads like a script: ask the model → animate → present the win. Views make no decisions; the model knows nothing about time.
 
-**7. Fixed design resolution (820×1000).** Everything is laid out in one coordinate space; the root container is scaled to fit the window.
+**7. Fixed design resolution (720×1000).** Everything is laid out in one coordinate space; the root container is scaled to fit the window.
 
 **8. Events instead of direct calls.** `Game.events` (`spinStart`, `reelStopped`, `reelsStopped`, `spinEnd`) — `Game` does not know the robot exists. The event bus appeared when the second listener did.
 
@@ -70,30 +69,24 @@ With flags like `isSpinning`, `isShowingWin`, … you eventually get a double sp
 Pressing SPIN again (the button reads STOP while spinning) or Space → `Game` sees the `spinning` state and calls `reelSet.stopNow()`:
 each reel's GSAP tween gets `progress(1)` — it jumps to its end, the final grid shows at once, and the normal flow continues.
 
-## The lever
-
-A classic one-armed-bandit lever on the machine's right side. It swings *towards the viewer* around a horizontal axis,
-faked in 2D: the stick is foreshortened (`scaleY = cos θ`, flipping below the pivot) and the knob grows as it comes closer —
-three Graphics, transforms only, no filters. SPIN, Space, a click on the knob or dragging it down all pull it.
-The lever moves in the same frame as the input (instant feedback); the reels start when it reaches the bottom (~0.16 s), like a real machine.
-The lever only reports "I was pulled" — the `Game` decides what happens.
-
 ## Robot companion
 
-The robot lives at **one home spot next to the lever** and moves only with a purpose: constant wandering in peripheral vision
-pulls attention away from the reels ([NN/g: Animation for usability](https://www.nngroup.com/articles/animation-usability/)).
+The robot drifts between rest spots around the machine — but only along a **U-shaped lane outside the card**
+(beside SPIN → up the left side → across the top → down the right side → beside SPIN), passing through corner points,
+so it never cuts across the reels. On narrow screens the side lanes hug the card (the body may overlap the card's padding
+or be slightly cropped by the screen edge, never the reels); on wide screens they move out into the side margins and the robot gets bigger.
 
 ```
-idle ──spin──▶ pullLever (its hand yanks the lever) ──▶ idle, eyes follow each reel stopping left to right
-            (spinStart "let's go!" instead, if the player is holding the robot)
+idle ──spin──▶ spinStart ("let's go!") ──▶ idle, eyes follow each reel stopping left to right
 idle | spin ──win──▶ smallWin (< 8× bet, clap) | win (hop) | bigWin (≥ 20×, flip) ──▶ idle
 loss → nothing, stays idle
 ```
 
-**Idle layers:** always — breathing, bobbing, blinking, following the cursor · every 8–15 s — a random fidget
-(look around, stretch, hop; never the same twice in a row) · when the player is idle, **once per idle period**:
-10 s — dreams (a thought cloud with three hearts/stars/… in a row; rarely the robot-head jackpot) →
-20 s — waves → 25 s — holds the lever and teases it. **It never spins on its own** — only the player spends the balance
+**Idle layers:** always — breathing, bobbing, blinking, following the cursor · drifting to another spot every 4.5–8 s ·
+at rest — a random fidget (look around, stretch, hop; never the same twice in a row) · when the player is idle, **once per idle period**:
+10 s — flies to a top corner and dreams (a thought cloud in the band above the reels with three hearts/stars/… in a row;
+rarely the robot-head jackpot) → 20 s — waves → 25 s — flies beside SPIN and points at it.
+**It never spins on its own** — only the player spends the balance
 (regulated markets banned autoplay: [SBC News](https://sbcnews.co.uk/featurednews/2021/02/02/ukgc-bans-online-slots-autoplay-and-quickspin-features/)).
 Any input interrupts attention seeking at once.
 

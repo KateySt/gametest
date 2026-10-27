@@ -45,9 +45,8 @@ export type ClipName =
   // attention seeking when the player is idle (once per idle period)
   | "dream"
   | "wave"
-  | "tease"
+  | "point"
   // game reactions
-  | "pullLever"
   | "spinStart"
   | "smallWin"
   | "win"
@@ -78,7 +77,6 @@ const cheer = (t: number, speed: number): PoseFrame => ({
   happy: true,
 });
 
-// The robot's home is to the RIGHT of the lever, so it reaches with its left arm (−).
 export const CLIPS: Record<ClipName, RobotClip> = {
   idle: { duration: Infinity, frame: (_p, t) => rest(t) },
 
@@ -144,40 +142,19 @@ export const CLIPS: Record<ClipName, RobotClip> = {
       };
     },
   },
-  tease: {
-    duration: 3200,
-    // hand on the knob, little tugs, glancing at the player
-    frame: (p, t) => {
-      const hold = bell(p, 0.12, 0.88);
-      return {
-        l: -0.1 - hold * (1.45 + Math.max(0, Math.sin(t * 7)) * 0.25),
-        r: 0.08,
-        headZ: hold * 0.08,
-        headY: hold * (p < 0.5 ? 0.35 : -0.15),
-        lean: hold * 0.12,
-      };
-    },
+  point: {
+    // loops until the player does something; the robot sits to the RIGHT of
+    // the SPIN button, so it points with its left arm (−)
+    duration: Infinity,
+    frame: (_p, t) => ({
+      l: -1.55 + Math.sin(t * 4) * 0.08,
+      r: 0.1,
+      headZ: 0.06,
+      headY: -0.35,
+    }),
   },
 
   // --- game reactions ---
-  pullLever: {
-    duration: 700,
-    // reach the knob, yank it down with the lever, let go
-    frame: (p, t) => {
-      const reach = 1 - smooth(0.12, 0.35, p);
-      const dip = bell(p, 0.25, 0.55);
-      return {
-        l: -0.3 - reach * 1.3 - (1 - smooth(0.6, 1, p)) * 0.2,
-        r: 0.1 + dip * 0.6,
-        headZ: Math.sin(t * 14) * 0.03,
-        headY: 0.2,
-        squash: -0.22 * dip,
-        lean: 0.18 * dip,
-        happy: p > 0.4,
-      };
-    },
-    events: [{ at: 0.3, jiggle: -4, antenna: 12 }],
-  },
   spinStart: {
     duration: 900,
     // "Let's go!": crouch, push both arms at the reels with a hop

@@ -16,7 +16,6 @@ import { attachRobot } from "./robot/Robot";
 import { RobotLayer } from "./robot/RobotLayer";
 import { Background } from "./view/Background";
 import { Hud } from "./view/Hud";
-import { Lever } from "./view/Lever";
 import {
   CELL_SIZE,
   DESIGN_HEIGHT,
@@ -74,22 +73,15 @@ const root = new Container();
 app.stage.addChild(background, root);
 
 const reelSet = new ReelSet(textures, initialGrid);
-// Machine on the left, lever on its right side, robot's home beside the lever.
-reelSet.position.set(52, 160);
+reelSet.position.set((DESIGN_WIDTH - reelSet.windowWidth) / 2, 160);
 const winPresenter = new WinPresenter(reelSet);
 
 // The callback runs only on click, after `game` below is initialized.
 const hud = new Hud(reelSet.windowWidth, () => void game.spin());
 hud.position.set(reelSet.x, reelSet.y + reelSet.windowHeight + 50);
 
-const lever = new Lever(() => void game.spin());
-lever.position.set(
-  reelSet.frameBounds.right + 28,
-  reelSet.y + reelSet.windowHeight / 2,
-);
-
-root.addChild(lever, reelSet, hud);
-const game = new Game(machine, reelSet, winPresenter, hud, lever);
+root.addChild(reelSet, hud);
+const game = new Game(machine, reelSet, winPresenter, hud);
 
 window.addEventListener("keydown", (event) => {
   if (event.code === "Space") void game.spin();
@@ -110,21 +102,30 @@ app.renderer.on("resize", fitToScreen);
 fitToScreen();
 
 // Everything the robot needs to know about the scene, in design coordinates.
-const knob = lever.knobRestPosition;
+const spinButton = hud.spinButtonBounds;
 await attachRobot({
   app,
   root,
   layer: robotLayer,
   game,
-  lever,
   symbolTextures: textures,
   layout: {
-    home: { x: knob.x + 95, y: knob.y + 40 },
-    size: 150,
+    frame: reelSet.frameBounds,
+    reelWindow: {
+      left: reelSet.x,
+      top: reelSet.y,
+      right: reelSet.x + reelSet.windowWidth,
+      bottom: reelSet.y + reelSet.windowHeight,
+    },
+    button: {
+      left: hud.x + spinButton.x,
+      top: hud.y + spinButton.y,
+      right: hud.x + spinButton.x + spinButton.width,
+      bottom: hud.y + spinButton.y + spinButton.height,
+    },
     reelCenters: [0, 1, 2].map((index) => ({
       x: reelSet.x + index * (CELL_SIZE + REEL_GAP) + CELL_SIZE / 2,
       y: reelSet.y + reelSet.windowHeight / 2,
     })),
-    bubble: { x: knob.x - 60, y: 78 },
   },
 });

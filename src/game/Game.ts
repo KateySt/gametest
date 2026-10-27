@@ -1,8 +1,7 @@
 import { EventEmitter } from "pixi.js";
 import { type SlotMachine, type SpinResult } from "../core/SlotMachine";
 import { StateMachine } from "../core/StateMachine";
-import { type Hud, type SpinButtonMode } from "../view/Hud";
-import { type Lever } from "../view/Lever";
+import { type Hud } from "../view/Hud";
 import { type ReelSet } from "../view/ReelSet";
 import { type WinPresenter } from "../view/WinPresenter";
 
@@ -37,10 +36,9 @@ export class Game {
     private readonly reelSet: ReelSet,
     private readonly winPresenter: WinPresenter,
     private readonly hud: Hud,
-    private readonly lever: Lever,
   ) {
     hud.showBalance(machine.balance);
-    this.setControls(machine.canSpin ? "spin" : "disabled");
+    hud.setButtonMode(machine.canSpin ? "spin" : "disabled");
   }
 
   /** SPIN button / space: starts a spin, or quick-stops the one in progress. */
@@ -55,39 +53,27 @@ export class Game {
     const result = this.machine.spin();
     this.flow.transitionTo("spinning");
     this.quickStopped = false;
-    this.setControls("stop");
+    this.hud.setButtonMode("stop");
     this.hud.showWin(0);
     this.hud.showBalance(result.balanceAfter - result.totalWin);
     this.events.emit("spinStart");
 
-    // The lever moves this very frame (instant feedback); the reels start
-    // when it reaches the bottom, ~0.16 s later — like a real machine.
-    await this.lever.pull();
-    const reels = this.reelSet.spinTo(
+    await this.reelSet.spinTo(
       result.grid,
       () => this.machine.randomSymbol(),
       (index) => this.events.emit("reelStopped", index),
     );
-    // A quick stop pressed during the pull applies as soon as reels exist.
-    if (this.quickStopped) this.reelSet.stopNow();
-    await reels;
 
     this.flow.transitionTo("presenting");
-    this.setControls("disabled");
+    this.hud.setButtonMode("disabled");
     this.events.emit("reelsStopped", result);
     this.hud.showWin(result.totalWin);
     await this.winPresenter.show(result.wins);
     this.hud.showBalance(result.balanceAfter);
 
     this.flow.transitionTo("idle");
-    this.setControls(this.machine.canSpin ? "spin" : "disabled");
+    this.hud.setButtonMode(this.machine.canSpin ? "spin" : "disabled");
     this.events.emit("spinEnd", result);
-  }
-
-  /** SPIN button and lever are two faces of the same control. */
-  private setControls(mode: SpinButtonMode): void {
-    this.hud.setButtonMode(mode);
-    this.lever.setEnabled(mode !== "disabled");
   }
 
   /** Show the final grid immediately. Once per spin. */

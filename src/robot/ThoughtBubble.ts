@@ -24,29 +24,12 @@ export class ThoughtBubble extends Container {
     .stroke({ width: 2, color: theme.ink });
   private showing = false;
 
-  /** `center` = bubble centre, `towards` = the robot's head (trail end). */
-  constructor(
-    private readonly textures: Record<SymbolId, Texture>,
-    center: Point,
-    towards: Point,
-  ) {
+  private readonly trail = new Graphics();
+
+  constructor(private readonly textures: Record<SymbolId, Texture>) {
     super();
     this.eventMode = "none";
     this.visible = false;
-    this.position.set(center.x, center.y);
-
-    // trail of shrinking circles from the bubble down to the robot's head
-    const trail = new Graphics();
-    for (const [k, r] of [
-      [0.42, 11],
-      [0.66, 8],
-      [0.86, 5],
-    ] as const) {
-      trail
-        .circle((towards.x - center.x) * k, (towards.y - center.y) * k, r)
-        .fill(theme.surface)
-        .stroke({ width: 3, color: theme.ink });
-    }
 
     // puffy cloud: overlapping circles, outline drawn first so it reads as one shape
     const puffs: [number, number, number][] = [
@@ -77,12 +60,26 @@ export class ThoughtBubble extends Container {
     }
     this.sparkle.position.set(WIDTH / 2 - 14, -HEIGHT / 2 + 4);
     this.cloud.addChild(this.sparkle);
-    this.addChild(trail, this.cloud);
+    this.addChild(this.trail, this.cloud);
   }
 
-  show(symbol: SymbolId): void {
+  /** `center` = bubble centre, `towards` = the robot's head (end of the trail). */
+  show(symbol: SymbolId, center: Point, towards: Point): void {
     if (this.showing) return;
     this.showing = true;
+    this.position.set(center.x, center.y);
+    // trail of shrinking circles from the bubble to the robot's head
+    this.trail.clear();
+    for (const [k, r] of [
+      [0.5, 11],
+      [0.7, 8],
+      [0.86, 5],
+    ] as const) {
+      this.trail
+        .circle((towards.x - center.x) * k, (towards.y - center.y) * k, r)
+        .fill(theme.surface)
+        .stroke({ width: 3, color: theme.ink });
+    }
     gsap.killTweensOf([
       this,
       this.scale,
